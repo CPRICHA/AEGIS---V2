@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import numpy as np
 
-from simulation.world_state import DroneState
+from simulation.world_state import world, DroneState
 from simulation.decision_engine import evaluate_drone
 from simulation.ai_actions import apply_ai_decision
 from simulation.ai_logging import log_system
@@ -45,3 +45,36 @@ for drone in drones:
     print()
 
 log_system("========== TEST COMPLETE ==========")
+
+
+def run_simulation_step():
+    if not world.drones:
+        # initialize real drones once
+        for i in range(5):
+            drone = DroneState(
+                id=i+1,
+                callsign=["FALCON","HAWK","OSPREY","KESTREL","MERLIN"][i],
+                status="ACTIVE",
+                pos=np.array([0.0, 0.0, 20.0])
+            )
+            world.drones.append(drone)
+
+    results = []
+
+    for drone in world.drones:
+        drone.update_telemetry()   # real simulation
+
+        decision = evaluate_drone(drone)
+
+        results.append({
+            "id": drone.id,
+            "battery": drone.battery,
+            "signal": drone.signal_strength,
+            "cpu_temp": drone.cpu_temperature,
+            "motor_temp": drone.motor_temperature,
+            "propeller": drone.propeller_health,
+            "status": drone.status,
+            "action": str(decision),
+        })
+
+    return {"drones": results}

@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useSimStore } from '../store/useSimStore'
 import { useSimulation } from '../hooks/useSimulation'
@@ -9,9 +9,53 @@ import RightPanel from '../components/mission/RightPanel'
 import NotificationPanel from '../components/mission/NotificationPanel'
 import EdgeCaseOverlay from '../components/mission/EdgeCaseOverlay'
 import CoordinationPanel from '../components/mission/CoordinationPanel'
+import SideRightPanel from '../panels/RightPanel'
+import SideNotificationPanel from '../panels/NotificationPanel'
+import SideCoordinationPanel from '../panels/CoordinationPanel'
+import SimulationPanel from '../components/mission/SimulationPanel'
 import { PanelLeftOpen, ChevronUp, ChevronDown } from 'lucide-react'
 
+const missionLogToggleStyle = {
+  position: 'absolute',
+  top: '-14px',
+  left: '50%',
+  transform: 'translateX(-50%)',
+  zIndex: 200,
+  background: 'rgba(13, 17, 23, 0.9)',
+  backdropFilter: 'blur(12px)',
+  border: '1px solid rgba(0, 229, 255, 0.3)',
+  borderRadius: '20px',
+  padding: '2px 16px',
+  cursor: 'pointer',
+  display: 'flex',
+  alignItems: 'center',
+  gap: '6px',
+  color: '#00e5ff',
+  transition: 'all 0.3s ease',
+  boxShadow: '0 -2px 12px rgba(0, 229, 255, 0.06)',
+}
+
+const simToggleStyle = {
+  position: 'absolute',
+  right: '20px',
+  top: '12px',
+  zIndex: 500,
+  padding: '8px 16px',
+  borderRadius: '6px',
+  border: '1px solid rgba(0, 229, 255, 0.5)',
+  background: 'rgba(0, 229, 255, 0.1)',
+  color: '#00e5ff',
+  cursor: 'pointer',
+  fontFamily: 'JetBrains Mono, monospace',
+  fontSize: '10px',
+  fontWeight: 700,
+  letterSpacing: '1.5px',
+  boxShadow: '0 0 16px rgba(0, 229, 255, 0.15)',
+}
+
 export default function Mission() {
+  const [isRightPanelOpen, setIsRightPanelOpen] = useState(true)
+  const [showSim, setShowSim] = useState(false)
   const [searchParams] = useSearchParams()
   const setScenario = useSimStore(s => s.setScenario)
   const selectedDrone = useSimStore(s => s.selectedDrone)
@@ -74,6 +118,7 @@ export default function Mission() {
         <div style={{
           flex: 1,
           display: 'flex',
+          minWidth: 0,
           overflow: 'hidden',
           position: 'relative',
         }}>
@@ -153,12 +198,60 @@ export default function Mission() {
           {/* Center: 3D Scene */}
           <div style={{
             flex: 1,
+            minWidth: 0,
             position: 'relative',
+            zIndex: 1,
             overflow: 'hidden',
           }}>
+            <button
+              type="button"
+              onClick={() => setShowSim((prev) => !prev)}
+              style={simToggleStyle}
+            >
+              DRONE SIMULATION
+            </button>
+
+            {showSim && (
+              <div
+                style={{
+                  position: 'absolute',
+                  right: '20px',
+                  top: '52px',
+                  width: '600px',
+                  maxWidth: 'calc(100% - 40px)',
+                  background: '#0a0a0f',
+                  border: '1px solid #00e5ff',
+                  borderRadius: '10px',
+                  zIndex: 9999,
+                  boxShadow: '0 8px 32px rgba(0, 0, 0, 0.6), 0 0 24px rgba(0, 229, 255, 0.12)',
+                }}
+              >
+                <SimulationPanel onClose={() => setShowSim(false)} />
+              </div>
+            )}
+
             <Scene3D />
             {scriptId && <EdgeCaseOverlay scriptId={scriptId} />}
           </div>
+
+          <div
+            className={`mission-right-panel ${isRightPanelOpen ? '' : 'mission-right-panel--closed'}`}
+          >
+            <SideRightPanel />
+            <SideNotificationPanel />
+            <SideCoordinationPanel />
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setIsRightPanelOpen(prev => !prev)}
+            className={`right-panel-toggle ${isRightPanelOpen ? '' : 'right-panel-toggle--closed'}`}
+            style={{ right: isRightPanelOpen ? '320px' : '0px' }}
+            title={isRightPanelOpen ? 'Hide right panel' : 'Show right panel'}
+            aria-expanded={isRightPanelOpen}
+          >
+            {isRightPanelOpen ? '>' : '<'}
+          </button>
 
           {/* Right Panel — sits above bottom, not full height */}
           {showRight && !scriptId && (
@@ -188,25 +281,7 @@ export default function Mission() {
             <button
               onClick={() => setBottomPanelCollapsed(!bottomPanelCollapsed)}
               title={bottomPanelCollapsed ? 'Show Mission Log' : 'Hide Mission Log'}
-              style={{
-                position: 'absolute',
-                top: '-14px',
-                left: '50%',
-                transform: 'translateX(-50%)',
-                zIndex: 200,
-                background: 'rgba(13, 17, 23, 0.9)',
-                backdropFilter: 'blur(12px)',
-                border: '1px solid rgba(0, 229, 255, 0.3)',
-                borderRadius: '20px',
-                padding: '2px 16px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                color: '#00e5ff',
-                transition: 'all 0.3s ease',
-                boxShadow: '0 -2px 12px rgba(0, 229, 255, 0.06)',
-              }}
+              style={missionLogToggleStyle}
               onMouseOver={e => {
                 e.currentTarget.style.borderColor = '#00e5ff'
                 e.currentTarget.style.boxShadow = '0 -2px 20px rgba(0, 229, 255, 0.15)'
@@ -238,6 +313,7 @@ export default function Mission() {
             }}>
               <NotificationPanel />
             </div>
+
           </div>
         )}
       </div>
