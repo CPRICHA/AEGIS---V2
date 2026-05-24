@@ -249,3 +249,68 @@ body::after {
 .thermal-gradient {
   background: linear-gradient(to top, #0000ff, #00ff00, #ffff00, #ff8800, #ff0000);
 }
+
+.mission-right-panel {
+  position: relative;
+  width: 320px;
+  min-width: 320px;
+  flex-shrink: 0;
+  border-left: 1px solid #1e293b;
+  background: #0a0a0f;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: visible;
+  transition: width 0.3s ease, min-width 0.3s ease;
+}
+
+.mission-right-panel--closed {
+  width: 0 !important;
+  min-width: 0 !important;
+  border-left: none !important;
+  overflow: visible !important;
+}
+
+@media (max-width: 1024px) {
+  .mission-right-panel:not(.mission-right-panel--closed) {
+    width: min(40vw, 320px);
+    min-width: min(40vw, 280px);
+  }
+}
+
+@media (max-width: 768px) {
+  .mission-right-panel:not(.mission-right-panel--closed) {
+    width: min(85vw, 320px);
+    min-width: min(85vw, 280px);
+  }
+}
+
+.right-panel-toggle {
+  position: absolute;
+  right: 320px;
+  top: 50%;
+  transform: translate(50%, -50%);
+  z-index: 1000;
+  height: 50px;
+  width: 18px;
+  border-radius: 10px;
+  border: 1px solid rgba(0, 229, 255, 0.3);
+  background: rgba(13, 17, 23, 0.95);
+  color: #00e5ff;
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: right 0.3s ease;
+}
+
+.right-panel-toggle--closed {
+  right: 0;
+}
+
+.right-panel-toggle:hover {
+  border-color: #00e5ff;
+  box-shadow: 0 0 8px rgba(0, 229, 255, 0.3);
+}

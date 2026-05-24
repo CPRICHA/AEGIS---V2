@@ -24,6 +24,10 @@ export const useSimStore = create(
       // ── Connection ──
       backendConnected: false,
       latency: 0,
+      telemetry: {},
+      liveAiDrones: [],
+
+      setLiveAiDrones: (drones) => set({ liveAiDrones: drones ?? [] }),
 
       // ── Simulation State ──
       simulationRunning: false,
@@ -211,6 +215,8 @@ export const useSimStore = create(
         }
         set(s => ({ survivors: [...s.survivors, newS] }))
       },
+
+      setTelemetry: (data) => set({ telemetry: data }),
 
       // ── UI Actions ──
       setCoordinationPanelOpen: (val) => set({ coordinationPanelOpen: val }),

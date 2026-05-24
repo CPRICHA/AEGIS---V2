@@ -269,6 +269,38 @@ export default function TopBar() {
           />
         )}
 
+        <button
+          type="button"
+          onClick={() => navigate('/ai-dashboard')}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '8px 16px',
+            borderRadius: '6px',
+            border: '1px solid rgba(0, 229, 255, 0.5)',
+            background: 'rgba(0, 229, 255, 0.1)',
+            color: '#00e5ff',
+            cursor: 'pointer',
+            fontFamily: 'JetBrains Mono, monospace',
+            fontSize: '10px',
+            fontWeight: 700,
+            letterSpacing: '1.5px',
+            boxShadow: '0 0 16px rgba(0, 229, 255, 0.15)',
+            transition: 'all 0.2s ease',
+          }}
+          onMouseOver={(e) => {
+            e.currentTarget.style.boxShadow = '0 0 24px rgba(0, 229, 255, 0.3)'
+            e.currentTarget.style.background = 'rgba(0, 229, 255, 0.18)'
+          }}
+          onMouseOut={(e) => {
+            e.currentTarget.style.boxShadow = '0 0 16px rgba(0, 229, 255, 0.15)'
+            e.currentTarget.style.background = 'rgba(0, 229, 255, 0.1)'
+          }}
+        >
+          VIEW AI DECISIONS
+        </button>
+
         {/* Backend status */}
         <div style={{
           display: 'flex',
