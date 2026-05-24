@@ -1,12 +1,28 @@
 import joblib
 import pandas as pd
 import numpy as np
+from pathlib import Path
 
 # -------------------------
 # LOAD TRAINED MODEL
 # -------------------------
 
-model = joblib.load("drone_decision_model.pkl")
+_MODEL_CANDIDATES = [
+    Path(__file__).resolve().parent / "drone_decision_model.pkl",
+    Path(__file__).resolve().parent.parent / "drone_decision_model.pkl",
+]
+
+
+def _load_model():
+    for path in _MODEL_CANDIDATES:
+        if path.is_file():
+            return joblib.load(path)
+    raise FileNotFoundError(
+        "drone_decision_model.pkl not found. Run: python simulation/train_model.py"
+    )
+
+
+model = _load_model()
 
 
 # -------------------------
@@ -14,11 +30,6 @@ model = joblib.load("drone_decision_model.pkl")
 # -------------------------
 
 def evaluate_drone(drone):
-
-    # -------------------------
-    # CREATE INPUT DATAFRAME
-    # -------------------------
-
     input_data = pd.DataFrame([{
         "battery": drone.battery,
         "propeller_health": drone.propeller_health,
@@ -30,37 +41,31 @@ def evaluate_drone(drone):
         "moisture_level": drone.moisture_level,
         "smoke_density": drone.smoke_density,
         "altitude": drone.altitude,
-        "speed": np.linalg.norm(drone.vel)
+        "speed": np.linalg.norm(drone.vel),
     }])
 
-    # -------------------------
-    # MODEL PREDICTION
-    # -------------------------
-
     action = model.predict(input_data)[0]
-
-    # -------------------------
-    # REASON GENERATION
-    # -------------------------
 
     reason = "AI autonomous decision"
 
     if action == "RETURN_TO_BASE":
         reason = "Battery critically low"
-
     elif action == "REROUTE":
         reason = "Obstacle detected"
-
     elif action == "AUTONOMOUS_MODE":
         reason = "Weak signal"
-
     elif action == "REQUEST_NEAREST_SENSOR":
         reason = "Thermal sensor failure"
-
     elif action == "LOW_POWER_MODE":
         reason = "CPU overheating"
+    elif action == "REDUCE_SPEED":
+        reason = "Propeller degraded"
+    elif action == "INCREASE_ALTITUDE":
+        reason = "High moisture — climbing"
+    elif action == "CONTINUE_MISSION":
+        reason = "All systems nominal"
 
     return {
         "action": action,
-        "reason": reason
+        "reason": reason,
     }

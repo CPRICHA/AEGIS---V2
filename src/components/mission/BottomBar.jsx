@@ -71,7 +71,11 @@ export default function BottomBar() {
                      <span style={{ color: '#475569', minWidth: '45px' }}>[{log.time.toFixed(1)}s]</span>
                      <LogIcon category={log.category} />
                      <span style={{ 
-                        color: log.category === 'critical' ? '#ff2929' : (log.category === 'survivor' ? '#00ff88' : '#e2e8f0'),
+                        color: log.category === 'critical' ? '#ff2929'
+                          : log.category === 'survivor' ? '#00ff88'
+                          : log.category === 'ai' ? '#a855f7'
+                          : log.category === 'failover' ? '#ffb300'
+                          : '#e2e8f0',
                         flex: 1,
                      }}>
                         {log.message}
@@ -115,6 +119,8 @@ function LogIcon({ category }) {
       case 'survivor': return <Crosshair size={12} color="#00ff88" style={{ marginTop: '2px' }} />
       case 'warning': return <AlertTriangle size={12} color="#ffb300" style={{ marginTop: '2px' }} />
       case 'critical': return <ShieldCheck size={12} color="#ff2929" style={{ marginTop: '2px' }} />
+      case 'ai': return <Terminal size={12} color="#a855f7" style={{ marginTop: '2px' }} />
+      case 'failover': return <AlertTriangle size={12} color="#ffb300" style={{ marginTop: '2px' }} />
       default: return <Info size={12} color="#00e5ff" style={{ marginTop: '2px' }} />
    }
 }

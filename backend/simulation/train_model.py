@@ -1,5 +1,6 @@
 import pandas as pd
 import joblib
+from pathlib import Path
 
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
@@ -9,7 +10,8 @@ from sklearn.metrics import accuracy_score
 # LOAD DATASET
 # -------------------------
 
-df = pd.read_csv("drone_dataset.csv")
+_sim_dir = Path(__file__).resolve().parent
+df = pd.read_csv(_sim_dir / "drone_dataset.csv")
 
 # -------------------------
 # FEATURES / LABELS
@@ -61,9 +63,8 @@ print(f"Accuracy: {accuracy * 100:.2f}%")
 # SAVE MODEL
 # -------------------------
 
-joblib.dump(
-    model,
-    "drone_decision_model.pkl"
-)
+_model_path = _sim_dir / "drone_decision_model.pkl"
+joblib.dump(model, _model_path)
+joblib.dump(model, _sim_dir.parent / "drone_decision_model.pkl")
 
 print("Model saved successfully.")

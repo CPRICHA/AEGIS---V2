@@ -127,10 +127,45 @@ export const useSimStore = create(
       applyBackendState: (msg) => {
         set(state => {
           const existingMsgs = new Set(state.eventLog.map(l => `${l.time}_${l.message}`))
-          const newFiltered = (msg.new_events || []).filter(l => !existingMsgs.has(`${l.time}_${l.message}`))
+          const newFiltered = (msg.new_events || [])
+            .filter(l => !existingMsgs.has(`${l.time}_${l.message}`))
+            .map(l => ({
+              time: l.time,
+              message: l.message,
+              category: l.category || 'system',
+              type: l.category || 'system',
+              drone_id: l.drone_id,
+            }))
+
           const updatedLog = [...state.eventLog, ...newFiltered].slice(-200)
 
-          // Frontend fully controls drone state — never override from backend
+          const notifications = [...state.notifications]
+          for (const e of newFiltered) {
+            const cat = e.category
+            if (cat === 'ai' || (e.message && e.message.includes('[AI BRAIN]'))) {
+              notifications.push({
+                id: Date.now() + Math.random(),
+                message: e.message,
+                type: 'guide',
+                timestamp: Date.now(),
+              })
+            } else if (cat === 'failover' || (e.message && e.message.includes('[FAILOVER]'))) {
+              notifications.push({
+                id: Date.now() + Math.random(),
+                message: e.message,
+                type: 'warning',
+                timestamp: Date.now(),
+              })
+            } else if (cat === 'critical') {
+              notifications.push({
+                id: Date.now() + Math.random(),
+                message: e.message,
+                type: 'error',
+                timestamp: Date.now(),
+              })
+            }
+          }
+
           return {
             backendConnected: true,
             drones: state.drones,
@@ -139,6 +174,7 @@ export const useSimStore = create(
             waterLevel: msg.water_level ?? state.waterLevel,
             terrainChanged: msg.terrain_changed ?? state.terrainChanged,
             eventLog: updatedLog,
+            notifications: notifications.slice(-30),
           }
         })
       },

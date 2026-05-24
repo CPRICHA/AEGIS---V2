@@ -7,6 +7,9 @@ const TYPE_COLORS = {
   survivor: '#00ff88',
   warning: '#ff6b2b',
   critical: '#ff2929',
+  ai: '#a855f7',
+  failover: '#ffb300',
+  system: '#64748b',
 }
 
 function formatTime(seconds) {
