@@ -72,58 +72,87 @@ async def simulation_loop():
             print(f"Simulation Error: {e}")
             await asyncio.sleep(0.1)
 
+def run_simulation_step():
+    ensure_world_drones()
+    results = []
+    for drone in world.drones:
+        # Skip evaluation if this drone was manually simulated
+        if getattr(drone, "isSimulated", False):
+            # Use existing fields directly, assuming action already set
+            action_field = drone.action if hasattr(drone, "action") else drone.last_decision
+            # Ensure action is a plain string for UI consistency
+            if isinstance(action_field, dict):
+                action_str = action_field.get("action", "CONTINUE_MISSION")
+            else:
+                action_str = str(action_field)
+            reason_str = action_field.get("reason", "") if isinstance(action_field, dict) else ""
+        else:
+            decision = evaluate_drone(drone)
+            apply_ai_decision(drone, decision, world.drones, verbose=False)
+            # Flatten action to a plain string and extract reason separately
+            raw_last = getattr(drone, "last_decision", "CONTINUE_MISSION")
+            if isinstance(raw_last, dict):
+                action_str = raw_last.get("action", "CONTINUE_MISSION")
+            else:
+                action_str = str(raw_last)
+            reason_str = decision.get("reason", "") if isinstance(decision, dict) else ""
+        cpu_temp = getattr(drone, "cpu_temperature", 0)
+        signal = getattr(drone, "signal_strength", 0)
+        propeller = getattr(drone, "propeller_health", 100)
+        results.append({
+            "id": drone.id,
+            "callsign": getattr(drone, "callsign", f"DRONE-{drone.id}"),
+            "battery": round(getattr(drone, "battery", 100.0), 1),
+            "signal": round(signal, 1),
+            "cpu": round(cpu_temp, 1),
+            "propeller": round(propeller, 1),
+            "action": action_str,
+            "reason": reason_str,
+            "status": getattr(drone, "status", "ACTIVE"),
+            "nearby": getattr(drone, "nearby_drone_id", None)
+        })
+    return {"drones": results}
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
-    print("Client connected")
-    ensure_world_drones()
 
     try:
         while True:
-            results = []
+            try:
+                data = run_simulation_step()
+                await websocket.send_json(data)
+                await asyncio.sleep(1)
 
-            for drone in world.drones:
-                decision = evaluate_drone(drone)
-                apply_ai_decision(drone, decision, world.drones, verbose=False)
-
-                results.append({
-                    "id": drone.id,
-                    "battery": drone.battery,
-                    "signal": drone.signal_strength,
-                    "cpu": drone.cpu_temperature,
-                    "status": drone.status,
-                    "action": decision,
-                    "nearby_drone_id": getattr(drone, "nearby_drone_id", None),
-                })
-
-            await websocket.send_json({"drones": results})
-            await asyncio.sleep(1)
+            except Exception as e:
+                print("WebSocket Error:", str(e))
+                break   # STOP LOOP if error happens
 
     except WebSocketDisconnect:
         print("Client disconnected")
 
-    except Exception as e:
-        print("WebSocket Error:", e)
-
     finally:
-        print("Connection closed cleanly")
+        print("WebSocket closed safely")
 
 
 @app.post("/override")
-def override_drone(data: dict = Body(...)):
-    ensure_world_drones()
-    drone_id = data["id"]
+def override(data: dict):
+    try:
+        drone_id = data.get("id")
 
-    for drone in world.drones:
-        if drone.id == drone_id:
-            for key, value in data.items():
-                if key == "id":
-                    continue
-                if hasattr(drone, key):
-                    setattr(drone, key, value)
-            return {"status": "updated", "drone_id": drone_id}
+        for drone in world.drones:
+            if drone.id == drone_id:
+                drone.battery = data.get("battery", drone.battery)
+                drone.signal_strength = data.get("signal", drone.signal_strength)
+                drone.cpu_temperature = data.get("cpu", drone.cpu_temperature)
+                drone.obstacle_distance = data.get("obstacle", drone.obstacle_distance)
+                drone.thermal_status = data.get("thermal", drone.thermal_status)
 
-    return {"status": "not_found", "drone_id": drone_id}
+        return {"status": "ok"}
+
+    except Exception as e:
+        print("Override Error:", str(e))
+        return {"error": str(e)}
 
 
 @app.post("/simulate")
@@ -131,48 +160,40 @@ def simulate_drone(data: dict = Body(...)):
     from simulation.decision_engine import evaluate_drone
     from simulation.ai_actions import apply_ai_decision
 
-    def _make_drone(drone_id, pos_offset):
-        d = type("DummyDrone", (), {})()
-        d.id = drone_id
-        d.battery = 100.0
-        d.thermal_status = True
-        d.obstacle_distance = 10.0
-        d.signal_strength = 100.0
-        d.cpu_temperature = 40.0
-        d.propeller_health = 100.0
-        d.lidar_status = True
-        d.moisture_level = 0.0
-        d.smoke_density = 0.0
-        d.altitude = 20.0
-        d.vel = np.zeros(3)
-        d.pos = np.array([float(pos_offset), 0.0, 20.0])
-        d.status = "ACTIVE"
-        d.reward_score = 0.0
-        d.direction = 0.0
-        d.autonomous_mode = False
-        d.requesting_support = False
-        d.nearby_drone_id = None
-        d.recent_events = []
-        return d
+    ensure_world_drones()
+    drone_id = data.get("id")
+    target_drone = None
+    for drone in world.drones:
+        if drone.id == drone_id:
+            target_drone = drone
+            break
 
-    fleet = [_make_drone(i, i * 15) for i in range(1, 6)]
-    drone = fleet[data["id"] - 1]
+    if not target_drone:
+        return {"error": f"Drone with ID {drone_id} not found."}
 
-    drone.battery = float(data["battery"])
-    drone.thermal_status = bool(data["thermal"])
-    drone.obstacle_distance = float(data["obstacle"])
-    drone.signal_strength = float(data["signal"])
-    drone.cpu_temperature = float(data["cpu"])
-    drone.propeller_health = float(data.get("propeller", 100))
+    target_drone.battery = float(data["battery"])
+    target_drone.thermal_status = bool(data["thermal"])
+    target_drone.obstacle_distance = float(data["obstacle"])
+    target_drone.signal_strength = float(data["signal"])
+    target_drone.cpu_temperature = float(data["cpu"])
+    target_drone.propeller_health = float(data.get("propeller", target_drone.propeller_health))
+    target_drone.isSimulated = True
 
-    result = evaluate_drone(drone)
-    apply_ai_decision(drone, result, fleet, verbose=False)
+    # Evaluate decision using the real evaluate_drone
+    result = evaluate_drone(target_drone)
+    
+    # Apply AI decision (e.g. cooperative assists, etc.)
+    apply_ai_decision(target_drone, result, world.drones, verbose=False)
+
+    # Set last_decision and action
+    target_drone.last_decision = result
+    target_drone.action = result
 
     return {
-        "drone_id": drone.id,
+        "drone_id": target_drone.id,
         "action": result,
-        "status": getattr(drone, "status", "UNKNOWN"),
-        "nearby_drone_id": getattr(drone, "nearby_drone_id", None),
+        "status": getattr(target_drone, "status", "UNKNOWN"),
+        "nearby_drone_id": getattr(target_drone, "nearby_drone_id", None),
     }
 
 

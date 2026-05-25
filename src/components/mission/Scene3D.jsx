@@ -1,13 +1,76 @@
-import { useRef, useState, useMemo, useEffect } from 'react'
+import React, { useRef, useState, useMemo, useEffect, memo } from 'react'
 import { Canvas, useThree, useFrame } from '@react-three/fiber'
-import { OrbitControls, Stars, Sky, PerspectiveCamera } from '@react-three/drei'
+import { OrbitControls, Stars, Sky, PerspectiveCamera, Html } from '@react-three/drei'
 import * as THREE from 'three'
 import { useSimStore } from '../../store/useSimStore'
 import Terrain from './Terrain'
 import DroneModel from './DroneModel'
+import DroneLabel from '../DroneLabel'
 import { PanelRightClose, PanelRightOpen, Target } from 'lucide-react'
 import { useEdgeCaseScript } from '../../hooks/useEdgeCaseScript'
-import { DRONE_BASE } from '../../hooks/useDroneMovement'
+import { DRONE_BASE, getDronePosition } from '../../hooks/useDroneMovement'
+
+function normalizeBackendDrone(d) {
+  if (!d) return null
+  // Normalize action: always a plain string; reason is a separate field
+  const action =
+    typeof d.action === 'string'
+      ? d.action
+      : d.action?.action || 'CONTINUE_MISSION'
+  const reason =
+    typeof d.action === 'object' && d.action !== null
+      ? (d.action.reason || '')
+      : (d.reason || '')
+  return {
+    id: d.id,
+    callsign: d.callsign || `DRONE-${d.id}`,
+    battery: d.battery ?? 100,
+    signal: d.signal ?? d.signal_strength ?? 100,
+    cpu: d.cpu ?? d.cpu_temp ?? d.cpu_temperature ?? 40,
+    cpu_temp: d.cpu ?? d.cpu_temp ?? d.cpu_temperature ?? 40,
+    thermal_status: d.thermal_status ?? true,
+    obstacle_distance: d.obstacle_distance ?? 10,
+    action,
+    reason,
+    nearby: d.nearby ?? d.nearby_drone_id ?? null,
+  }
+}
+
+// DroneLabel is now in src/components/DroneLabel.jsx — imported above
+
+function DroneLabelFollower({ simDrone, aiDrone }) {
+  const groupRef = useRef()
+
+  useFrame(() => {
+    if (!groupRef.current) return
+    const pos = getDronePosition(simDrone)
+    if (Number.isNaN(pos.x) || Number.isNaN(pos.y) || Number.isNaN(pos.z)) return
+    groupRef.current.position.set(pos.x, pos.y, pos.z)
+  })
+
+  const activeDrone = useMemo(() => {
+    if (aiDrone) return aiDrone
+    // Fallback: use sim drone data (backend offline / mission not started)
+    return {
+      id: simDrone.id,
+      callsign: simDrone.callsign || `DRONE-${simDrone.id}`,
+      battery: simDrone.battery ?? 100,
+      signal: simDrone.signal ?? simDrone.signal_strength ?? 100,
+      cpu: 40,
+      thermal_status: simDrone.thermal_status ?? true,
+      obstacle_distance: simDrone.obstacle_distance ?? 10,
+      action: 'CONTINUE_MISSION',
+      reason: '',
+      nearby: null,
+    }
+  }, [aiDrone, simDrone])
+
+  return (
+    <group ref={groupRef}>
+      <DroneLabel drone={activeDrone} />
+    </group>
+  )
+}
 
 // ═══════════════════════════════════
 // ATMOSPHERE CONFIG
@@ -342,10 +405,20 @@ function CameraController() {
 // ═══════════════════════════════════
 // MAIN SCENE
 // ═══════════════════════════════════
-export default function Scene3D() {
+export default function Scene3D({ drones = [] }) {
   const controlsRef = useRef()
   const rawDrones = useSimStore(s => s.drones)
   const displayDrones = useEdgeCaseScript(rawDrones)
+  const stableDrones = useMemo(() => drones, [drones]);
+
+  const aiById = useMemo(() => {
+    const map = new Map()
+    stableDrones.forEach((d) => {
+      const normalized = normalizeBackendDrone(d)
+      if (normalized) map.set(d.id, normalized)
+    })
+    return map
+  }, [stableDrones])
 
   const survivors = useSimStore(s => s.survivors)
   const seedSurvivor = useSimStore(s => s.seedSurvivor)
@@ -441,9 +514,15 @@ export default function Scene3D() {
         <DroneBasePlatform />
 
         {/* Drones */}
-        {displayDrones.map((drone, index) => (
-          <DroneModel key={drone.id} drone={drone} index={index} />
-        ))}
+        {useMemo(() => displayDrones.map((drone, index) => (
+          <group key={drone.id}>
+            <DroneModel drone={drone} index={index} />
+            <DroneLabelFollower
+              simDrone={drone}
+              aiDrone={aiById.get(drone.id)}
+            />
+          </group>
+        )), [displayDrones, aiById])}
 
         {/* Survivors */}
         {survivors.map(survivor => (
