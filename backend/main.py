@@ -3,14 +3,103 @@ import numpy as np
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import asyncio
+from datetime import datetime
 from simulation.world_state import world, DroneState
 from simulation import drone_engine, survivor_engine, scenario_loader, trajectory
 from api.routes import router
 from api.api_websocket import hub
 from simulation.decision_engine import evaluate_drone
 from simulation.ai_actions import apply_ai_decision
+from db.mongo import insert_experience, fetch_experiences, MONGO_AVAILABLE
+from simulation.rl_engine import calculate_reward
+import threading
 
 CALLSIGNS = ["FALCON", "HAWK", "OSPREY", "KESTREL", "MERLIN"]
+
+# DQN RL State Transition History Tracker
+DRONE_PREVIOUS_TRANSITIONS = {}
+
+def record_drone_experience(drone_id: int, current_drone, action_str: str, reward_val: float):
+    """Store (s, a, r, s') transition in MongoDB for DQN training."""
+    if not MONGO_AVAILABLE:
+        return
+        
+    try:
+        def get_val(obj, key, default):
+            if isinstance(obj, dict):
+                return obj.get(key, default)
+            try:
+                return getattr(obj, key, default)
+            except AttributeError:
+                return default
+                
+        def get_normalized_state(obj):
+            battery = float(get_val(obj, "battery", 100.0))
+            
+            signal = get_val(obj, "signal_strength", None)
+            if signal is None:
+                signal = get_val(obj, "signal", 100.0)
+            signal = float(signal)
+                
+            cpu = get_val(obj, "cpu_temperature", None)
+            if cpu is None:
+                cpu = get_val(obj, "cpu", 40.0)
+            cpu = float(cpu)
+                
+            thermal = get_val(obj, "thermal_status", None)
+            if thermal is None:
+                thermal = get_val(obj, "thermal", True)
+                
+            obstacle = get_val(obj, "obstacle_distance", None)
+            if obstacle is None:
+                obstacle = get_val(obj, "obstacle", 10.0)
+            obstacle = float(obstacle)
+                
+            return {
+                "battery": battery,
+                "signal": signal,
+                "cpu": cpu,
+                "thermal": int(thermal),
+                "obstacle": obstacle
+            }
+
+        # 1. Compute normalized state s'
+        next_state = get_normalized_state(current_drone)
+        
+        # 2. If previous transition exists for this drone, store transition in Mongo
+        if drone_id in DRONE_PREVIOUS_TRANSITIONS:
+            prev = DRONE_PREVIOUS_TRANSITIONS[drone_id]
+            
+            action_map = {
+                "CONTINUE_MISSION": 0,
+                "RETURN_TO_BASE": 1,
+                "REQUEST_NEAREST_SENSOR": 2,
+                "REROUTE": 3
+            }
+            
+            experience = {
+                "drone_id": drone_id,
+                "episode_id": getattr(world, "scenario", "earthquake"),
+                "state": prev["state"],
+                "action": action_map.get(prev["action"], 0),
+                "reward": prev["reward"],
+                "next_state": next_state,
+                "done": False,
+                "timestamp": datetime.utcnow()
+            }
+            
+            insert_experience(experience)
+            print(f"[EXP] Storing experience | Drone {drone_id} | Action: {prev['action']} | Reward: {prev['reward']}")
+            
+        # 3. Save current normalized state & action as previous transition
+        DRONE_PREVIOUS_TRANSITIONS[drone_id] = {
+            "state": next_state,
+            "action": action_str,
+            "reward": reward_val
+        }
+    except Exception as e:
+        print(f"Failed to record drone experience transition: {e}")
+
 
 
 def ensure_world_drones():
@@ -96,6 +185,11 @@ def run_simulation_step():
             else:
                 action_str = str(raw_last)
             reason_str = decision.get("reason", "") if isinstance(decision, dict) else ""
+            
+            # Record experience transition for organic simulation ticks
+            reward_val = calculate_reward(drone, decision)
+            record_drone_experience(drone.id, drone, action_str, reward_val)
+
         cpu_temp = getattr(drone, "cpu_temperature", 0)
         signal = getattr(drone, "signal_strength", 0)
         propeller = getattr(drone, "propeller_health", 100)
@@ -189,12 +283,69 @@ def simulate_drone(data: dict = Body(...)):
     target_drone.last_decision = result
     target_drone.action = result
 
+    # Record experience transition for simulated/manual interventions
+    action_str = result.get("action", "CONTINUE_MISSION") if isinstance(result, dict) else str(result)
+    reward_val = calculate_reward(target_drone, result)
+    record_drone_experience(target_drone.id, target_drone, action_str, reward_val)
+
     return {
         "drone_id": target_drone.id,
         "action": result,
         "status": getattr(target_drone, "status", "UNKNOWN"),
         "nearby_drone_id": getattr(target_drone, "nearby_drone_id", None),
     }
+
+
+# --------------------------------------------------
+# STEP 3: TRAINING ENDPOINT
+# --------------------------------------------------
+
+@app.post("/train-rl")
+def train_rl():
+    """Trigger DQN training from stored MongoDB experiences."""
+    import subprocess
+    try:
+        print("[TRAIN] Training started via /train-rl endpoint")
+        result = subprocess.run(
+            ["python", "rl/train_dqn.py"],
+            capture_output=True, text=True, timeout=120
+        )
+        print(result.stdout)
+        if result.returncode != 0:
+            print(result.stderr)
+            return {"status": "error", "detail": result.stderr}
+        return {"status": "training_complete", "output": result.stdout}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# --------------------------------------------------
+# STEP 10: AUTO TRAIN AFTER MISSION
+# --------------------------------------------------
+
+def background_train():
+    """Run DQN training in a background thread."""
+    import subprocess
+    print("[TRAIN] Background training started")
+    try:
+        result = subprocess.run(
+            ["python", "rl/train_dqn.py"],
+            capture_output=True, text=True, timeout=120
+        )
+        print(result.stdout)
+        if result.returncode != 0:
+            print(f"Training error: {result.stderr}")
+        else:
+            print("[TRAIN] Background training complete - model updated")
+    except Exception as e:
+        print(f"Background training failed: {e}")
+
+
+@app.post("/end-mission")
+def end_mission():
+    """End the current mission and trigger background RL training."""
+    threading.Thread(target=background_train, daemon=True).start()
+    return {"status": "mission_ended", "training": "started_in_background"}
 
 
 if __name__ == "__main__":
