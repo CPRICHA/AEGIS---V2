@@ -68,6 +68,7 @@ export default function Mission() {
   const bottomPanelCollapsed = useSimStore(s => s.bottomPanelCollapsed)
   const setBottomPanelCollapsed = useSimStore(s => s.setBottomPanelCollapsed)
   const scriptId = searchParams.get('script')
+  const backendDrones = useSimStore((s) => s.liveAiDrones)
 
   useSimulation()
 
@@ -230,7 +231,7 @@ export default function Mission() {
               </div>
             )}
 
-            <Scene3D />
+            <Scene3D drones={backendDrones} />
             {scriptId && <EdgeCaseOverlay scriptId={scriptId} />}
           </div>
 
