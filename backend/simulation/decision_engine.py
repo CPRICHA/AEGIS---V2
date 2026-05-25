@@ -2,9 +2,10 @@ import joblib
 import pandas as pd
 import numpy as np
 from pathlib import Path
+import random
 
 # -------------------------
-# LOAD TRAINED MODEL
+# LOAD TRAINED ML MODEL
 # -------------------------
 
 _MODEL_CANDIDATES = [
@@ -26,7 +27,86 @@ model = _load_model()
 
 
 # -------------------------
-# AI DECISION FUNCTION
+# SAFE PYTORCH DQN MODEL LOAD
+# -------------------------
+
+RL_AVAILABLE = False
+rl_model = None
+
+try:
+    import torch
+    from rl.dqn_model import DQN
+    
+    rl_model = DQN()
+    
+    # STEP 7: Look for model in rl/ directory
+    possible_paths = [
+        Path(__file__).resolve().parent.parent / "rl" / "dqn_model.pth",
+        Path(__file__).resolve().parent.parent / "dqn_model.pth",
+        Path("rl/dqn_model.pth"),
+        Path("dqn_model.pth"),
+    ]
+    
+    for p in possible_paths:
+        if p.is_file():
+            rl_model.load_state_dict(torch.load(p, map_location=torch.device('cpu')))
+            rl_model.eval()
+            RL_AVAILABLE = True
+            print(f"[DQN] RL model loaded from {p}")
+            break
+    
+    if not RL_AVAILABLE:
+        print("[DQN] No dqn_model.pth found - RL disabled, using rule-based fallback")
+except ImportError:
+    print("[DQN] PyTorch not installed - RL disabled")
+except Exception as e:
+    print(f"[DQN] PyTorch model load failed: {e}")
+
+
+# -------------------------
+# RL DECIDE FUNCTION
+# -------------------------
+
+def rl_decide(state):
+    """STEP 8: RL decision with epsilon-greedy exploration."""
+    if not RL_AVAILABLE or rl_model is None:
+        return None
+
+    actions = [
+        "CONTINUE_MISSION",
+        "RETURN_TO_BASE",
+        "REQUEST_NEAREST_SENSOR",
+        "REROUTE"
+    ]
+
+    # Exploration (Epsilon-greedy with epsilon = 0.1)
+    epsilon = 0.1
+    if random.random() < epsilon:
+        return random.choice(actions)
+
+    # Exploitation: Forward pass through DQN
+    try:
+        import torch
+        # STEP 4: Model input normalization
+        s = torch.tensor([
+            state["battery"] / 100.0,
+            state["signal"] / 100.0,
+            state["cpu"] / 100.0,
+            float(state["thermal"]),
+            state["obstacle"] / 10.0
+        ], dtype=torch.float32)
+
+        with torch.no_grad():
+            q_values = rl_model(s)
+
+        action_idx = torch.argmax(q_values).item()
+        return actions[action_idx]
+    except Exception:
+        return "CONTINUE_MISSION"
+
+
+# -------------------------
+# AI HYBRID DECISION FUNCTION
 # -------------------------
 
 def get_val(obj, key, default):
@@ -54,6 +134,28 @@ def evaluate_drone(drone):
     # Get obstacle (supporting both obstacle_distance and obstacle)
     obstacle = get_val(drone, "obstacle_distance", 10.0)
 
+    # Determine if any critical safety rules are triggered
+    safety_triggered = (battery < 30) or (signal < 25) or (thermal is False) or (obstacle < 1)
+
+    # STEP 9: Hybrid decision system — RL only when safe
+    if RL_AVAILABLE and not safety_triggered:
+        state = {
+            "battery": battery,
+            "signal": signal,
+            "cpu": get_val(drone, "cpu_temperature", 40.0),
+            "thermal": thermal,
+            "obstacle": obstacle
+        }
+        rl_action = rl_decide(state)
+
+        if rl_action:
+            print(f"[RL] RL decision used: {rl_action}")
+            return {
+                "action": rl_action,
+                "reason": "RL Optimized Decision"
+            }
+
+    # Rule-Based / Fallback Decisions if safety is triggered or RL is not yet available
     # 1. Battery critically low
     if battery < 30:
         return {
@@ -82,7 +184,7 @@ def evaluate_drone(drone):
             "reason": "Obstacle too close"
         }
 
-    # fallback to model evaluation
+    # fallback to traditional ML model evaluation
     input_data = pd.DataFrame([{
         "battery": battery,
         "propeller_health": get_val(drone, "propeller_health", 100.0),

@@ -1,24 +1,81 @@
-"""Lightweight reward simulation for AI decisions (not full RL)."""
+"""Reinforcement learning reward calculation for AI drone decisions."""
 
-# Positive rewards for proactive / recovery actions
-REWARD_MAP = {
-    "RETURN_TO_BASE": 10,
-    "REROUTE": 8,
-    "AUTONOMOUS_MODE": 5,
-    "REQUEST_NEAREST_SENSOR": 12,
-    "LOW_POWER_MODE": 6,
-    "REDUCE_SPEED": 4,
-    "INCREASE_ALTITUDE": 4,
-    "CONTINUE_MISSION": 1,
-}
-
-# Penalties for risky states the model should avoid
-PENALTY_MAP = {
-    "CONTINUE_MISSION": 0,
-}
+def get_val(obj, key, default):
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    try:
+        return getattr(obj, key, default)
+    except AttributeError:
+        return default
 
 
-def calculate_reward(action: str) -> float:
-    if action in PENALTY_MAP and PENALTY_MAP[action] < 0:
-        return PENALTY_MAP[action]
-    return float(REWARD_MAP.get(action, 0))
+def calculate_reward(drone, decision):
+    if isinstance(decision, dict):
+        action = decision.get("action", "CONTINUE_MISSION")
+    else:
+        action = str(decision)
+
+    # Use get_val to safely handle both object and dict drones
+    battery = get_val(drone, "battery", 100.0)
+    
+    signal = get_val(drone, "signal_strength", None)
+    if signal is None:
+        signal = get_val(drone, "signal", 100.0)
+        
+    thermal = get_val(drone, "thermal_status", None)
+    if thermal is None:
+        thermal = get_val(drone, "thermal", True)
+        
+    obstacle = get_val(drone, "obstacle_distance", None)
+    if obstacle is None:
+        obstacle = get_val(drone, "obstacle", 10.0)
+
+    # Calculate reward
+    reward = 0
+
+    # -----------------------------
+    # CRITICAL FAILURE CASES
+    # -----------------------------
+    # Battery critical
+    if battery < 20:
+        if action == "RETURN_TO_BASE":
+            reward = 10
+        else:
+            reward = -5
+
+    # Signal weak
+    elif signal < 30:
+        if action == "REROUTE":
+            reward = 5
+        else:
+            reward = -3
+
+    # Thermal failure
+    elif not thermal:
+        if action == "REQUEST_NEAREST_SENSOR":
+            reward = 7
+        else:
+            reward = -4
+
+    # Obstacle very close
+    elif obstacle < 2:
+        if action == "REROUTE":
+            reward = 6
+        else:
+            reward = -4
+
+    # -----------------------------
+    # NORMAL SAFE STATE
+    # -----------------------------
+    elif action == "CONTINUE_MISSION":
+        reward = 1   # small positive reward
+
+    # -----------------------------
+    # UNNECESSARY ACTION PENALTY
+    # -----------------------------
+    else:
+        reward = -1
+
+    drone_id = get_val(drone, "id", "?")
+    print(f"[REWARD] Drone {drone_id} | Action: {action} | Reward: {reward}")
+    return float(reward)

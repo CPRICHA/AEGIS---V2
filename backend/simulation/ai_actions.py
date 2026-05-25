@@ -58,7 +58,7 @@ def apply_ai_decision(drone, decision, all_drones, *, verbose: bool = True):
         if helper_id and verbose:
             log_failover(helper_id, drone.id)
 
-    reward = calculate_reward(action)
+    reward = calculate_reward(drone, decision)
     drone.reward_score += reward
 
     if verbose:
